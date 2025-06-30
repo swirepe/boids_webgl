@@ -125,6 +125,16 @@
             transform: scale(1.2);
         }
 
+        select {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: inherit;
+            padding: 4px;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+
         .stat-item {
             display: flex;
             justify-content: space-between;
@@ -239,6 +249,22 @@
             <input type="range" id="perceptionRadius" min="20" max="100" value="50" step="5">
             <span id="perceptionRadiusValue">50</span>
         </div>
+
+        <div class="control-group">
+            <label>Boid Size</label>
+            <input type="range" id="boidSize" min="0.5" max="5" value="1" step="0.1">
+            <span id="boidSizeValue">1.0</span>
+        </div>
+
+        <div class="control-group">
+            <label>Boid Shape</label>
+            <select id="boidShape">
+                <option value="dot">Dot</option>
+                <option value="triangle">Triangle</option>
+                <option value="ring">Ring</option>
+                <option value="arrow">Arrow</option>
+            </select>
+        </div>
     </div>
     
     <div class="overlay stats" id="stats">
@@ -279,6 +305,7 @@
                 }
 
                 this.config = this.parseURLParams();
+                this.shapeOptions = ['dot', 'triangle', 'ring', 'arrow'];
                 this.setupColorScheme();
                 this.setupCanvas();
                 
@@ -313,6 +340,8 @@
                     cohesion: parseFloat(params.get('cohesion')) || 1.0,
                     maxSpeed: parseFloat(params.get('maxSpeed')) || 2.0,
                     perceptionRadius: parseFloat(params.get('perceptionRadius')) || 50,
+                    boidSize: parseFloat(params.get('boidSize')) || 1.0,
+                    boidShape: params.get('boidShape') || 'dot',
                     header: params.get('header') || '',
                     subheader: params.get('subheader') || '',
                     debug: params.has('debug')
@@ -368,20 +397,24 @@
                 in vec2 a_position;
                 in vec2 a_velocity;
                 in float a_age;
-                
+
                 uniform vec2 u_resolution;
                 uniform float u_time;
                 uniform float u_hue;
-                
+                uniform float u_boidSize;
+                uniform int u_boidShape;
+
                 out vec3 v_color;
                 out float v_alpha;
+                out vec2 v_velocity;
                 
                 void main() {
                     vec2 position = a_position / u_resolution * 2.0 - 1.0;
                     position.y *= -1.0;
                     
                     gl_Position = vec4(position, 0.0, 1.0);
-                    gl_PointSize = 3.0 + sin(u_time * 0.01 + a_age) * 1.0;
+                    gl_PointSize = (3.0 + sin(u_time * 0.01 + a_age) * 1.0) * u_boidSize;
+                    v_velocity = a_velocity;
                     
                     float speed = length(a_velocity);
                     float hue = u_hue + speed * 0.1;
@@ -398,18 +431,43 @@
                 
                 const fragmentShaderSource = `#version 300 es
                 precision highp float;
-                
+
                 in vec3 v_color;
                 in float v_alpha;
-                
+                in vec2 v_velocity;
+
+                uniform int u_boidShape;
+
                 out vec4 fragColor;
-                
+
                 void main() {
                     vec2 coord = gl_PointCoord - vec2(0.5);
                     float dist = length(coord);
-                    
-                    if (dist > 0.5) discard;
-                    
+
+                    vec2 rotated = coord;
+                    if (u_boidShape == 2 || u_boidShape == 3) {
+                        float angle = atan(v_velocity.y, v_velocity.x);
+                        float c = cos(angle);
+                        float s = sin(angle);
+                        rotated = vec2(c * coord.x - s * coord.y, s * coord.x + c * coord.y);
+                    }
+
+                    bool discardFrag = false;
+                    if (u_boidShape == 0) {
+                        discardFrag = dist > 0.5;
+                    } else if (u_boidShape == 1) {
+                        discardFrag = dist > 0.5 || dist < 0.35;
+                    } else if (u_boidShape == 2) {
+                        discardFrag = rotated.y < -0.5 || rotated.x < -0.5 + (rotated.y + 0.5) || rotated.x > 0.5 - (rotated.y + 0.5);
+                    } else if (u_boidShape == 3) {
+                        if (rotated.y > 0.0) {
+                            discardFrag = abs(rotated.x) > (0.5 - rotated.y);
+                        } else {
+                            discardFrag = abs(rotated.x) > 0.15 || rotated.y < -0.5;
+                        }
+                    }
+                    if (discardFrag) discard;
+
                     float alpha = (0.5 - dist) * 2.0 * v_alpha;
                     fragColor = vec4(v_color, alpha);
                 }`;
@@ -423,7 +481,9 @@
                     age: this.gl.getAttribLocation(this.program, 'a_age'),
                     resolution: this.gl.getUniformLocation(this.program, 'u_resolution'),
                     time: this.gl.getUniformLocation(this.program, 'u_time'),
-                    hue: this.gl.getUniformLocation(this.program, 'u_hue')
+                    hue: this.gl.getUniformLocation(this.program, 'u_hue'),
+                    boidSize: this.gl.getUniformLocation(this.program, 'u_boidSize'),
+                    boidShape: this.gl.getUniformLocation(this.program, 'u_boidShape')
                 };
             }
             
@@ -658,7 +718,7 @@
             }
             
             setupControlBindings() {
-                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
+                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius', 'boidSize'];
                 
                 controls.forEach(control => {
                     const slider = document.getElementById(control);
@@ -679,10 +739,18 @@
                         this.log(`${control} changed to ${value}`);
                     });
                 });
+
+                const shapeSelect = document.getElementById('boidShape');
+                shapeSelect.value = this.config.boidShape;
+                shapeSelect.addEventListener('change', (e) => {
+                    this.config.boidShape = e.target.value;
+                    this.updateURL();
+                    this.log(`boidShape changed to ${e.target.value}`);
+                });
             }
             
             updateControlValues() {
-                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
+                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius', 'boidSize'];
                 
                 controls.forEach(control => {
                     const display = document.getElementById(control + 'Value');
@@ -694,8 +762,9 @@
                         display.textContent = value.toFixed(1);
                     }
                 });
-                
+
                 document.getElementById('boidCountStat').textContent = this.config.boidCount;
+                document.getElementById('boidShape').value = this.config.boidShape;
             }
             
             setupEventListeners() {
@@ -801,6 +870,9 @@
                 this.gl.uniform2f(this.locations.resolution, this.canvas.width, this.canvas.height);
                 this.gl.uniform1f(this.locations.time, currentTime * 0.001);
                 this.gl.uniform1f(this.locations.hue, this.config.hue / 360.0);
+                this.gl.uniform1f(this.locations.boidSize, this.config.boidSize);
+                const shapeIndex = this.shapeOptions.indexOf(this.config.boidShape);
+                this.gl.uniform1i(this.locations.boidShape, shapeIndex);
                 
                 // GPU timing (approximation)
                 const renderStart = performance.now();
