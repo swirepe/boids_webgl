@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boids Simulation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #0a0a0a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .overlay {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            z-index: 10;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .controls {
+            top: 20px;
+            left: 20px;
+            max-width: 300px;
+            transform: translateX(-110%);
+        }
+
+        .controls.visible {
+            transform: translateX(0);
+        }
+
+        .stats {
+            top: 20px;
+            right: 20px;
+            min-width: 200px;
+            transform: translateX(110%);
+        }
+
+        .stats.visible {
+            transform: translateX(0);
+        }
+
+        .toggle-btn {
+            position: fixed;
+            z-index: 15;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            backdrop-filter: blur(5px);
+        }
+
+        .toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.05);
+        }
+
+        .controls-toggle {
+            top: 20px;
+            left: 20px;
+        }
+
+        .stats-toggle {
+            top: 20px;
+            right: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+            border-radius: 2px;
+            appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--primary-color, #ff6b6b);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: var(--primary-color, #ff6b6b);
+        }
+
+        .header-text {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 5;
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .header {
+            font-size: clamp(2rem, 5vw, 4rem);
+            font-weight: bold;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, var(--primary-color, #ff6b6b), var(--secondary-color, #4ecdc4));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        .subheader {
+            font-size: clamp(1rem, 2.5vw, 1.5rem);
+            opacity: 0.6;
+            animation: fade 4s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        @keyframes fade {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 0.8; }
+        }
+
+        @media (max-width: 768px) {
+            .overlay {
+                padding: 15px;
+            }
+            
+            .controls {
+                max-width: 250px;
+            }
+            
+            .stats {
+                min-width: 150px;
+            }
+            
+            .toggle-btn {
+                padding: 10px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div class="header-text" id="headerText"></div>
+    
+    <button class="toggle-btn controls-toggle" id="controlsToggle">⚙️ Controls</button>
+    <button class="toggle-btn stats-toggle" id="statsToggle">📊 Stats</button>
+    
+    <div class="overlay controls" id="controls">
+        <div class="control-group">
+            <label>Boid Count</label>
+            <input type="range" id="boidCount" min="100" max="2000" value="800" step="50">
+            <span id="boidCountValue">800</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Separation</label>
+            <input type="range" id="separation" min="0" max="2" value="1" step="0.1">
+            <span id="separationValue">1.0</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Alignment</label>
+            <input type="range" id="alignment" min="0" max="2" value="1" step="0.1">
+            <span id="alignmentValue">1.0</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Cohesion</label>
+            <input type="range" id="cohesion" min="0" max="2" value="1" step="0.1">
+            <span id="cohesionValue">1.0</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Max Speed</label>
+            <input type="range" id="maxSpeed" min="0.5" max="5" value="2" step="0.1">
+            <span id="maxSpeedValue">2.0</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Perception Radius</label>
+            <input type="range" id="perceptionRadius" min="20" max="100" value="50" step="5">
+            <span id="perceptionRadiusValue">50</span>
+        </div>
+    </div>
+    
+    <div class="overlay stats" id="stats">
+        <div class="stat-item">
+            <span>FPS:</span>
+            <span class="stat-value" id="fpsValue">0</span>
+        </div>
+        <div class="stat-item">
+            <span>Boids:</span>
+            <span class="stat-value" id="boidCountStat">0</span>
+        </div>
+        <div class="stat-item">
+            <span>Frame Time:</span>
+            <span class="stat-value" id="frameTimeValue">0ms</span>
+        </div>
+        <div class="stat-item">
+            <span>GPU Time:</span>
+            <span class="stat-value" id="gpuTimeValue">0ms</span>
+        </div>
+    </div>
+
+    <script>
+        class BoidsSimulation {
+            constructor() {
+                this.canvas = document.getElementById('canvas');
+                
+                // Try WebGL2 first, fallback to WebGL1
+                this.gl = this.canvas.getContext('webgl2') || this.canvas.getContext('webgl');
+                
+                if (!this.gl) {
+                    alert('WebGL not supported');
+                    return;
+                }
+                
+                // Check for required extensions
+                if (!this.gl.getExtension) {
+                    console.warn('Extensions not supported');
+                }
+
+                this.config = this.parseURLParams();
+                this.setupColorScheme();
+                this.setupCanvas();
+                
+                try {
+                    this.setupShaders();
+                    this.setupBuffers();
+                } catch (error) {
+                    console.error('Shader setup failed:', error);
+                    alert('Failed to initialize WebGL shaders. Check console for details.');
+                    return;
+                }
+                
+                this.setupUI();
+                this.setupEventListeners();
+                
+                this.lastTime = 0;
+                this.frameCount = 0;
+                this.fps = 0;
+                this.frameTime = 0;
+                
+                this.log('Boids simulation initialized');
+                this.animate();
+            }
+            
+            parseURLParams() {
+                const params = new URLSearchParams(window.location.search);
+                return {
+                    hue: parseFloat(params.get('hue')) || 0,
+                    boidCount: parseInt(params.get('boidCount')) || 800,
+                    separation: parseFloat(params.get('separation')) || 1.0,
+                    alignment: parseFloat(params.get('alignment')) || 1.0,
+                    cohesion: parseFloat(params.get('cohesion')) || 1.0,
+                    maxSpeed: parseFloat(params.get('maxSpeed')) || 2.0,
+                    perceptionRadius: parseFloat(params.get('perceptionRadius')) || 50,
+                    header: params.get('header') || '',
+                    subheader: params.get('subheader') || '',
+                    debug: params.has('debug')
+                };
+            }
+            
+            setupColorScheme() {
+                const hue = this.config.hue;
+                const primary = `hsl(${hue}, 70%, 60%)`;
+                const secondary = `hsl(${(hue + 120) % 360}, 70%, 60%)`;
+                const accent = `hsl(${(hue + 240) % 360}, 70%, 60%)`;
+                
+                document.documentElement.style.setProperty('--primary-color', primary);
+                document.documentElement.style.setProperty('--secondary-color', secondary);
+                document.documentElement.style.setProperty('--accent-color', accent);
+                
+                this.colors = {
+                    primary: this.hslToRgb(hue, 0.7, 0.6),
+                    secondary: this.hslToRgb((hue + 120) % 360, 0.7, 0.6),
+                    accent: this.hslToRgb((hue + 240) % 360, 0.7, 0.6)
+                };
+            }
+            
+            hslToRgb(h, s, l) {
+                h /= 360;
+                const a = s * Math.min(l, 1 - l);
+                const f = n => {
+                    const k = (n + h * 12) % 12;
+                    return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                };
+                return [f(0), f(8), f(4)];
+            }
+            
+            setupCanvas() {
+                const resize = () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                    this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+                };
+                
+                resize();
+                window.addEventListener('resize', resize);
+                
+                this.gl.enable(this.gl.BLEND);
+                this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+                this.gl.clearColor(0.04, 0.04, 0.04, 1.0);
+            }
+            
+            setupShaders() {
+                const vertexShaderSource = `#version 300 es
+                precision highp float;
+                
+                in vec2 a_position;
+                in vec2 a_velocity;
+                in float a_age;
+                
+                uniform vec2 u_resolution;
+                uniform float u_time;
+                uniform float u_hue;
+                
+                out vec3 v_color;
+                out float v_alpha;
+                
+                void main() {
+                    vec2 position = a_position / u_resolution * 2.0 - 1.0;
+                    position.y *= -1.0;
+                    
+                    gl_Position = vec4(position, 0.0, 1.0);
+                    gl_PointSize = 3.0 + sin(u_time * 0.01 + a_age) * 1.0;
+                    
+                    float speed = length(a_velocity);
+                    float hue = u_hue + speed * 0.1;
+                    hue = mod(hue, 1.0);
+                    
+                    // HSV to RGB conversion
+                    vec3 c = vec3(hue, 0.8, 0.9);
+                    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    v_color = c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    
+                    v_alpha = 0.7 + sin(u_time * 0.02 + a_age) * 0.3;
+                }`;
+                
+                const fragmentShaderSource = `#version 300 es
+                precision highp float;
+                
+                in vec3 v_color;
+                in float v_alpha;
+                
+                out vec4 fragColor;
+                
+                void main() {
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float dist = length(coord);
+                    
+                    if (dist > 0.5) discard;
+                    
+                    float alpha = (0.5 - dist) * 2.0 * v_alpha;
+                    fragColor = vec4(v_color, alpha);
+                }`;
+                
+                this.program = this.createProgram(vertexShaderSource, fragmentShaderSource);
+                this.gl.useProgram(this.program);
+                
+                this.locations = {
+                    position: this.gl.getAttribLocation(this.program, 'a_position'),
+                    velocity: this.gl.getAttribLocation(this.program, 'a_velocity'),
+                    age: this.gl.getAttribLocation(this.program, 'a_age'),
+                    resolution: this.gl.getUniformLocation(this.program, 'u_resolution'),
+                    time: this.gl.getUniformLocation(this.program, 'u_time'),
+                    hue: this.gl.getUniformLocation(this.program, 'u_hue')
+                };
+            }
+            
+            createProgram(vertexSource, fragmentSource) {
+                const vertexShader = this.createShader(this.gl.VERTEX_SHADER, vertexSource);
+                const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, fragmentSource);
+                
+                const program = this.gl.createProgram();
+                this.gl.attachShader(program, vertexShader);
+                this.gl.attachShader(program, fragmentShader);
+                this.gl.linkProgram(program);
+                
+                if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+                    const info = this.gl.getProgramInfoLog(program);
+                    console.error('Program link error:', info);
+                    throw new Error('Program linking failed: ' + info);
+                }
+                
+                // Clean up shaders
+                this.gl.deleteShader(vertexShader);
+                this.gl.deleteShader(fragmentShader);
+                
+                return program;
+            }
+            
+            createShader(type, source) {
+                const shader = this.gl.createShader(type);
+                this.gl.shaderSource(shader, source);
+                this.gl.compileShader(shader);
+                
+                if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+                    const info = this.gl.getShaderInfoLog(shader);
+                    console.error('Shader compile error:', info);
+                    console.error('Shader source:', source);
+                    throw new Error('Shader compilation failed: ' + info);
+                }
+                
+                return shader;
+            }
+            
+            setupBuffers() {
+                this.initializeBoids();
+                
+                this.positionBuffer = this.gl.createBuffer();
+                this.velocityBuffer = this.gl.createBuffer();
+                this.ageBuffer = this.gl.createBuffer();
+                
+                this.updateBuffers();
+            }
+            
+            initializeBoids() {
+                this.boids = [];
+                const count = this.config.boidCount;
+                
+                for (let i = 0; i < count; i++) {
+                    this.boids.push({
+                        x: Math.random() * this.canvas.width,
+                        y: Math.random() * this.canvas.height,
+                        vx: (Math.random() - 0.5) * 4,
+                        vy: (Math.random() - 0.5) * 4,
+                        age: Math.random() * 1000
+                    });
+                }
+                
+                this.log(`Initialized ${count} boids`);
+            }
+            
+            updateBuffers() {
+                const positions = new Float32Array(this.boids.length * 2);
+                const velocities = new Float32Array(this.boids.length * 2);
+                const ages = new Float32Array(this.boids.length);
+                
+                for (let i = 0; i < this.boids.length; i++) {
+                    positions[i * 2] = this.boids[i].x;
+                    positions[i * 2 + 1] = this.boids[i].y;
+                    velocities[i * 2] = this.boids[i].vx;
+                    velocities[i * 2 + 1] = this.boids[i].vy;
+                    ages[i] = this.boids[i].age;
+                }
+                
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, positions, this.gl.DYNAMIC_DRAW);
+                
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.velocityBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, velocities, this.gl.DYNAMIC_DRAW);
+                
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.ageBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, ages, this.gl.DYNAMIC_DRAW);
+            }
+            
+            updateBoids(deltaTime) {
+                const dt = deltaTime * 0.016; // Normalize to ~60fps
+                
+                for (let i = 0; i < this.boids.length; i++) {
+                    const boid = this.boids[i];
+                    
+                    // Apply boid rules
+                    const [sepX, sepY] = this.separation(boid, i);
+                    const [aliX, aliY] = this.alignment(boid, i);
+                    const [cohX, cohY] = this.cohesion(boid, i);
+                    
+                    // Apply forces
+                    boid.vx += sepX * this.config.separation * dt;
+                    boid.vy += sepY * this.config.separation * dt;
+                    boid.vx += aliX * this.config.alignment * dt;
+                    boid.vy += aliY * this.config.alignment * dt;
+                    boid.vx += cohX * this.config.cohesion * dt;
+                    boid.vy += cohY * this.config.cohesion * dt;
+                    
+                    // Limit speed
+                    const speed = Math.sqrt(boid.vx * boid.vx + boid.vy * boid.vy);
+                    if (speed > this.config.maxSpeed) {
+                        boid.vx = (boid.vx / speed) * this.config.maxSpeed;
+                        boid.vy = (boid.vy / speed) * this.config.maxSpeed;
+                    }
+                    
+                    // Update position
+                    boid.x += boid.vx * dt * 10;
+                    boid.y += boid.vy * dt * 10;
+                    boid.age += dt;
+                    
+                    // Wrap around screen
+                    if (boid.x < 0) boid.x = this.canvas.width;
+                    if (boid.x > this.canvas.width) boid.x = 0;
+                    if (boid.y < 0) boid.y = this.canvas.height;
+                    if (boid.y > this.canvas.height) boid.y = 0;
+                }
+            }
+            
+            separation(boid, index) {
+                let steerX = 0, steerY = 0;
+                let count = 0;
+                const radius = this.config.perceptionRadius * 0.5;
+                
+                for (let i = 0; i < this.boids.length; i++) {
+                    if (i === index) continue;
+                    
+                    const other = this.boids[i];
+                    const dx = boid.x - other.x;
+                    const dy = boid.y - other.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < radius && distance > 0) {
+                        steerX += dx / distance;
+                        steerY += dy / distance;
+                        count++;
+                    }
+                }
+                
+                if (count > 0) {
+                    steerX /= count;
+                    steerY /= count;
+                }
+                
+                return [steerX, steerY];
+            }
+            
+            alignment(boid, index) {
+                let avgVx = 0, avgVy = 0;
+                let count = 0;
+                const radius = this.config.perceptionRadius;
+                
+                for (let i = 0; i < this.boids.length; i++) {
+                    if (i === index) continue;
+                    
+                    const other = this.boids[i];
+                    const dx = boid.x - other.x;
+                    const dy = boid.y - other.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < radius) {
+                        avgVx += other.vx;
+                        avgVy += other.vy;
+                        count++;
+                    }
+                }
+                
+                if (count > 0) {
+                    avgVx /= count;
+                    avgVy /= count;
+                    return [(avgVx - boid.vx) * 0.1, (avgVy - boid.vy) * 0.1];
+                }
+                
+                return [0, 0];
+            }
+            
+            cohesion(boid, index) {
+                let centerX = 0, centerY = 0;
+                let count = 0;
+                const radius = this.config.perceptionRadius;
+                
+                for (let i = 0; i < this.boids.length; i++) {
+                    if (i === index) continue;
+                    
+                    const other = this.boids[i];
+                    const dx = boid.x - other.x;
+                    const dy = boid.y - other.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < radius) {
+                        centerX += other.x;
+                        centerY += other.y;
+                        count++;
+                    }
+                }
+                
+                if (count > 0) {
+                    centerX /= count;
+                    centerY /= count;
+                    return [(centerX - boid.x) * 0.01, (centerY - boid.y) * 0.01];
+                }
+                
+                return [0, 0];
+            }
+            
+            setupUI() {
+                // Setup header text
+                const headerText = document.getElementById('headerText');
+                if (this.config.header || this.config.subheader) {
+                    headerText.innerHTML = `
+                        ${this.config.header ? `<div class="header">${this.config.header}</div>` : ''}
+                        ${this.config.subheader ? `<div class="subheader">${this.config.subheader}</div>` : ''}
+                    `;
+                    headerText.style.display = 'block';
+                } else {
+                    headerText.style.display = 'none';
+                }
+                
+                // Setup controls
+                this.setupControlBindings();
+                this.updateControlValues();
+            }
+            
+            setupControlBindings() {
+                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
+                
+                controls.forEach(control => {
+                    const slider = document.getElementById(control);
+                    const display = document.getElementById(control + 'Value');
+                    
+                    slider.value = this.config[control];
+                    
+                    slider.addEventListener('input', (e) => {
+                        const value = control === 'boidCount' ? parseInt(e.target.value) : parseFloat(e.target.value);
+                        this.config[control] = value;
+                        
+                        if (control === 'boidCount') {
+                            this.initializeBoids();
+                        }
+                        
+                        this.updateControlValues();
+                        this.updateURL();
+                        this.log(`${control} changed to ${value}`);
+                    });
+                });
+            }
+            
+            updateControlValues() {
+                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
+                
+                controls.forEach(control => {
+                    const display = document.getElementById(control + 'Value');
+                    const value = this.config[control];
+                    
+                    if (control === 'boidCount') {
+                        display.textContent = value.toString();
+                    } else {
+                        display.textContent = value.toFixed(1);
+                    }
+                });
+                
+                document.getElementById('boidCountStat').textContent = this.config.boidCount;
+            }
+            
+            setupEventListeners() {
+                // Toggle buttons
+                document.getElementById('controlsToggle').addEventListener('click', () => {
+                    document.getElementById('controls').classList.toggle('visible');
+                });
+                
+                document.getElementById('statsToggle').addEventListener('click', () => {
+                    document.getElementById('stats').classList.toggle('visible');
+                });
+                
+                // Touch support for mobile
+                let touchStart = null;
+                
+                this.canvas.addEventListener('touchstart', (e) => {
+                    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (touchStart) {
+                        const touch = e.touches[0];
+                        const dx = touch.clientX - touchStart.x;
+                        const dy = touch.clientY - touchStart.y;
+                        
+                        // Add some turbulence based on touch movement
+                        for (let i = 0; i < Math.min(10, this.boids.length); i++) {
+                            const boid = this.boids[i];
+                            boid.vx += dx * 0.01;
+                            boid.vy += dy * 0.01;
+                        }
+                        
+                        touchStart = { x: touch.clientX, y: touch.clientY };
+                    }
+                });
+                
+                this.canvas.addEventListener('touchend', () => {
+                    touchStart = null;
+                });
+            }
+            
+            updateURL() {
+                if (!this.config.debug) return;
+                
+                const params = new URLSearchParams();
+                
+                Object.keys(this.config).forEach(key => {
+                    if (key !== 'debug' && this.config[key] !== null && this.config[key] !== '') {
+                        params.set(key, this.config[key]);
+                    }
+                });
+                
+                if (this.config.debug) {
+                    params.set('debug', '');
+                }
+                
+                const newURL = window.location.pathname + '?' + params.toString();
+                window.history.replaceState({}, '', newURL);
+            }
+            
+            log(message) {
+                if (this.config.debug) {
+                    console.log(`[Boids] ${message}`);
+                }
+            }
+            
+            animate(currentTime = 0) {
+                const deltaTime = currentTime - this.lastTime;
+                this.lastTime = currentTime;
+                
+                // Update FPS
+                this.frameCount++;
+                if (this.frameCount % 60 === 0) {
+                    this.fps = Math.round(1000 / (deltaTime || 16));
+                    document.getElementById('fpsValue').textContent = this.fps;
+                }
+                
+                this.frameTime = deltaTime;
+                document.getElementById('frameTimeValue').textContent = deltaTime.toFixed(1) + 'ms';
+                
+                // Clear canvas
+                this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+                
+                // Update simulation
+                this.updateBoids(deltaTime);
+                this.updateBuffers();
+                
+                // Setup attributes
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                this.gl.enableVertexAttribArray(this.locations.position);
+                this.gl.vertexAttribPointer(this.locations.position, 2, this.gl.FLOAT, false, 0, 0);
+                
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.velocityBuffer);
+                this.gl.enableVertexAttribArray(this.locations.velocity);
+                this.gl.vertexAttribPointer(this.locations.velocity, 2, this.gl.FLOAT, false, 0, 0);
+                
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.ageBuffer);
+                this.gl.enableVertexAttribArray(this.locations.age);
+                this.gl.vertexAttribPointer(this.locations.age, 1, this.gl.FLOAT, false, 0, 0);
+                
+                // Set uniforms
+                this.gl.uniform2f(this.locations.resolution, this.canvas.width, this.canvas.height);
+                this.gl.uniform1f(this.locations.time, currentTime * 0.001);
+                this.gl.uniform1f(this.locations.hue, this.config.hue / 360.0);
+                
+                // GPU timing (approximation)
+                const renderStart = performance.now();
+                
+                // Draw
+                this.gl.drawArrays(this.gl.POINTS, 0, this.boids.length);
+                
+                const renderEnd = performance.now();
+                document.getElementById('gpuTimeValue').textContent = (renderEnd - renderStart).toFixed(1) + 'ms';
+                
+                requestAnimationFrame((time) => this.animate(time));
+            }
+        }
+        
+        // Initialize simulation when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            new BoidsSimulation();
+        });
+        
+        // Handle URL parameter changes
+        window.addEventListener('popstate', () => {
+            location.reload();
+        });
+        
+        // Prevent context menu on right click for better mobile experience
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        // Add some visual feedback for interactions
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('toggle-btn')) {
+                e.target.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    e.target.style.transform = '';
+                }, 100);
+            }
+        });
+        
+        // Performance monitoring
+        let performanceStats = {
+            frameCount: 0,
+            startTime: performance.now(),
+            lastReportTime: performance.now()
+        };
+        
+        function reportPerformance() {
+            const now = performance.now();
+            const elapsed = now - performanceStats.lastReportTime;
+            
+            if (elapsed > 5000) { // Report every 5 seconds in debug mode
+                const url = new URLSearchParams(window.location.search);
+                if (url.has('debug')) {
+                    const avgFPS = (performanceStats.frameCount / elapsed) * 1000;
+                    console.log(`[Performance] Average FPS: ${avgFPS.toFixed(1)}, Total frames: ${performanceStats.frameCount}`);
+                }
+                
+                performanceStats.frameCount = 0;
+                performanceStats.lastReportTime = now;
+            }
+            
+            performanceStats.frameCount++;
+            requestAnimationFrame(reportPerformance);
+        }
+        
+        // Start performance monitoring
+        requestAnimationFrame(reportPerformance);
+    </script>
+</body>
+</html>
