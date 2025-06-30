@@ -20,3 +20,8 @@ I want an optional URL parameter "debug".  When debug is set, the URL should be 
 - Boids now store a type index with per-type speed factors and color offsets.
 - WebGL shaders and buffers updated to handle type-based attributes.
 
+### Update by Codex
+- **Prompt:** "Please address any inline comments on the diff, as well as any additional instructions below. Rebase from devel and make any updates you need to"
+- Added a `Speed Multiplier` slider to globally adjust boid speed.
+- Movement and velocity limits now factor in this multiplier.
+
