@@ -14,3 +14,9 @@ I want an optional URL parameter "debug".  When debug is set, the URL should be 
 
 ---
 
+### Update by Codex
+- **Prompt:** "Let's add controls for selecting the number of types of boids, each with their own characteristics. Let's have global modifiers that affect all boids"
+- Added a new `Boid Types` control and configuration parameter.
+- Boids now store a type index with per-type speed factors and color offsets.
+- WebGL shaders and buffers updated to handle type-based attributes.
+

@@ -209,6 +209,12 @@
             <input type="range" id="boidCount" min="100" max="2000" value="800" step="50">
             <span id="boidCountValue">800</span>
         </div>
+
+        <div class="control-group">
+            <label>Boid Types</label>
+            <input type="range" id="boidTypes" min="1" max="3" value="1" step="1">
+            <span id="boidTypesValue">1</span>
+        </div>
         
         <div class="control-group">
             <label>Separation</label>
@@ -308,6 +314,7 @@
                 return {
                     hue: parseFloat(params.get('hue')) || 0,
                     boidCount: parseInt(params.get('boidCount')) || 800,
+                    boidTypes: parseInt(params.get('boidTypes')) || 1,
                     separation: parseFloat(params.get('separation')) || 1.0,
                     alignment: parseFloat(params.get('alignment')) || 1.0,
                     cohesion: parseFloat(params.get('cohesion')) || 1.0,
@@ -368,10 +375,12 @@
                 in vec2 a_position;
                 in vec2 a_velocity;
                 in float a_age;
+                in float a_type;
                 
                 uniform vec2 u_resolution;
                 uniform float u_time;
                 uniform float u_hue;
+                uniform float u_typeCount;
                 
                 out vec3 v_color;
                 out float v_alpha;
@@ -384,7 +393,8 @@
                     gl_PointSize = 3.0 + sin(u_time * 0.01 + a_age) * 1.0;
                     
                     float speed = length(a_velocity);
-                    float hue = u_hue + speed * 0.1;
+                    float hue = u_hue + (a_type / u_typeCount);
+                    hue += speed * 0.1;
                     hue = mod(hue, 1.0);
                     
                     // HSV to RGB conversion
@@ -421,9 +431,11 @@
                     position: this.gl.getAttribLocation(this.program, 'a_position'),
                     velocity: this.gl.getAttribLocation(this.program, 'a_velocity'),
                     age: this.gl.getAttribLocation(this.program, 'a_age'),
+                    type: this.gl.getAttribLocation(this.program, 'a_type'),
                     resolution: this.gl.getUniformLocation(this.program, 'u_resolution'),
                     time: this.gl.getUniformLocation(this.program, 'u_time'),
-                    hue: this.gl.getUniformLocation(this.program, 'u_hue')
+                    hue: this.gl.getUniformLocation(this.program, 'u_hue'),
+                    typeCount: this.gl.getUniformLocation(this.program, 'u_typeCount')
                 };
             }
             
@@ -470,6 +482,7 @@
                 this.positionBuffer = this.gl.createBuffer();
                 this.velocityBuffer = this.gl.createBuffer();
                 this.ageBuffer = this.gl.createBuffer();
+                this.typeBuffer = this.gl.createBuffer();
                 
                 this.updateBuffers();
             }
@@ -477,14 +490,24 @@
             initializeBoids() {
                 this.boids = [];
                 const count = this.config.boidCount;
-                
+                const types = this.config.boidTypes;
+
+                this.typeConfigs = [];
+                for (let t = 0; t < types; t++) {
+                    this.typeConfigs.push({
+                        speedFactor: 1 + t * 0.3
+                    });
+                }
+
                 for (let i = 0; i < count; i++) {
+                    const type = Math.floor(Math.random() * types);
                     this.boids.push({
                         x: Math.random() * this.canvas.width,
                         y: Math.random() * this.canvas.height,
                         vx: (Math.random() - 0.5) * 4,
                         vy: (Math.random() - 0.5) * 4,
-                        age: Math.random() * 1000
+                        age: Math.random() * 1000,
+                        type
                     });
                 }
                 
@@ -495,6 +518,7 @@
                 const positions = new Float32Array(this.boids.length * 2);
                 const velocities = new Float32Array(this.boids.length * 2);
                 const ages = new Float32Array(this.boids.length);
+                const types = new Float32Array(this.boids.length);
                 
                 for (let i = 0; i < this.boids.length; i++) {
                     positions[i * 2] = this.boids[i].x;
@@ -502,6 +526,7 @@
                     velocities[i * 2] = this.boids[i].vx;
                     velocities[i * 2 + 1] = this.boids[i].vy;
                     ages[i] = this.boids[i].age;
+                    types[i] = this.boids[i].type;
                 }
                 
                 this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
@@ -512,6 +537,9 @@
                 
                 this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.ageBuffer);
                 this.gl.bufferData(this.gl.ARRAY_BUFFER, ages, this.gl.DYNAMIC_DRAW);
+
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.typeBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, types, this.gl.DYNAMIC_DRAW);
             }
             
             updateBoids(deltaTime) {
@@ -535,9 +563,10 @@
                     
                     // Limit speed
                     const speed = Math.sqrt(boid.vx * boid.vx + boid.vy * boid.vy);
-                    if (speed > this.config.maxSpeed) {
-                        boid.vx = (boid.vx / speed) * this.config.maxSpeed;
-                        boid.vy = (boid.vy / speed) * this.config.maxSpeed;
+                    const limit = this.config.maxSpeed * this.typeConfigs[boid.type].speedFactor;
+                    if (speed > limit) {
+                        boid.vx = (boid.vx / speed) * limit;
+                        boid.vy = (boid.vy / speed) * limit;
                     }
                     
                     // Update position
@@ -658,7 +687,7 @@
             }
             
             setupControlBindings() {
-                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
+                const controls = ['boidCount', 'boidTypes', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
                 
                 controls.forEach(control => {
                     const slider = document.getElementById(control);
@@ -667,10 +696,10 @@
                     slider.value = this.config[control];
                     
                     slider.addEventListener('input', (e) => {
-                        const value = control === 'boidCount' ? parseInt(e.target.value) : parseFloat(e.target.value);
+                        const value = (control === 'boidCount' || control === 'boidTypes') ? parseInt(e.target.value) : parseFloat(e.target.value);
                         this.config[control] = value;
-                        
-                        if (control === 'boidCount') {
+
+                        if (control === 'boidCount' || control === 'boidTypes') {
                             this.initializeBoids();
                         }
                         
@@ -682,13 +711,13 @@
             }
             
             updateControlValues() {
-                const controls = ['boidCount', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
+                const controls = ['boidCount', 'boidTypes', 'separation', 'alignment', 'cohesion', 'maxSpeed', 'perceptionRadius'];
                 
                 controls.forEach(control => {
                     const display = document.getElementById(control + 'Value');
                     const value = this.config[control];
                     
-                    if (control === 'boidCount') {
+                    if (control === 'boidCount' || control === 'boidTypes') {
                         display.textContent = value.toString();
                     } else {
                         display.textContent = value.toFixed(1);
@@ -796,11 +825,16 @@
                 this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.ageBuffer);
                 this.gl.enableVertexAttribArray(this.locations.age);
                 this.gl.vertexAttribPointer(this.locations.age, 1, this.gl.FLOAT, false, 0, 0);
+
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.typeBuffer);
+                this.gl.enableVertexAttribArray(this.locations.type);
+                this.gl.vertexAttribPointer(this.locations.type, 1, this.gl.FLOAT, false, 0, 0);
                 
                 // Set uniforms
                 this.gl.uniform2f(this.locations.resolution, this.canvas.width, this.canvas.height);
                 this.gl.uniform1f(this.locations.time, currentTime * 0.001);
                 this.gl.uniform1f(this.locations.hue, this.config.hue / 360.0);
+                this.gl.uniform1f(this.locations.typeCount, this.config.boidTypes);
                 
                 // GPU timing (approximation)
                 const renderStart = performance.now();
