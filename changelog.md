@@ -14,3 +14,10 @@ I want an optional URL parameter "debug".  When debug is set, the URL should be 
 
 ---
 
+## 2025-06-30 ChatGPT
+### Prompt
+Let's add controls to scale the boids and change their representation (triangles, dots, rings, cones, arrows, etc)
+### Changes
+- Added boid size slider and boid shape dropdown in the controls overlay
+- Extended shaders and rendering logic to support scaling and multiple shapes
+
