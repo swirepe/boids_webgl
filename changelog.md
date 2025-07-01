@@ -14,3 +14,6 @@ I want an optional URL parameter "debug".  When debug is set, the URL should be 
 
 ---
 
+OpenAI Codex
+Prompt: Rename our HTML file to index.html
+Changes: Renamed boidswebgl.html to index.html
